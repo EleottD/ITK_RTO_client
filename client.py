@@ -124,7 +124,7 @@ class RtoClient:
 
 if __name__ == "__main__":
     # Явно указываем метод и выводим его
-    method = "EvolutionaryOpt"  # или "TestStepOpt"
+    method = "TestStepOpt"  # или "EvolutionaryOpt"
     print(f"[MAIN] Будет использоваться метод оптимизации: {method}")
 
     client = RtoClient(optimization_method=method)
