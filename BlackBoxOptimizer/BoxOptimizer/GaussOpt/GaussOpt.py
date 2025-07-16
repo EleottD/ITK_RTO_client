@@ -139,8 +139,8 @@ class GaussOpt(BaseOptimizer):
     """Функция возращяющая массив минимумов и максимумов вида [[min1, max1],[min2, max2]...]"""
 
     def _init_vecs(self,population):
-            if self._seed is not None:
-                np.random.seed(self._seed)
+            # if self._seed is not None:
+            #     np.random.seed(self._seed)
             # Преобразуем входные данные в numpy array для удобства
             constraints = np.asarray(self.input_bound_of_vec)
             # Генерируем данные для каждой компоненты отдельно
