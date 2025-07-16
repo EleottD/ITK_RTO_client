@@ -3,9 +3,6 @@ import numpy as np
 from ..BaseOptimizer import BaseOptimizer
 from .OptClass import GeneticAlgorithmOptimizer
 
-
-
-
 class Genetic_Algo(BaseOptimizer):
     def __init__(self, 
                 to_model_vec_size: int,
@@ -55,7 +52,6 @@ class Genetic_Algo(BaseOptimizer):
                 upper[i] = vec_data._values_properties_list[i].max
             
         return lower, upper
-    
 
     def modelOptimize(self, func: Callable[[np.ndarray], np.ndarray]) -> None:
         input_lower, input_upper = self._get_bounds("to_model")

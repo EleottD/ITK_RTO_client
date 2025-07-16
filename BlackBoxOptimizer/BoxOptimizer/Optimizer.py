@@ -67,6 +67,15 @@ class Optimizer(object):
         self._CurrentOptimizerObject = self._currentOptimizerClass(*args, **kwargs)
         """Текущий объект оптимизации"""
 
+        if 'seed' in kwargs.keys() is not None:
+            try:
+                self.seed = int(kwargs['seed'])
+            except:
+                self.seed = None
+            """Сид для псевдослучайной генерации"""
+            np.random.seed(self.seed)
+
+
         self.external_model: Callable[[np.ndarray], np.ndarray] = external_model
         """Текущая внешняя модель - черный ящик"""
 

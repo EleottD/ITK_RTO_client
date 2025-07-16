@@ -3,10 +3,7 @@ import RtoApi_pb2
 import RtoApi_pb2_grpc
 import numpy as np
 from typing import List, Dict
-from optimization_methods import SERVER_HOST, SERVER_PORT
-
-# Задайте порт вручную здесь - он переопределит значение из optimization_methods
-CUSTOM_PORT = 5089  # Измените на нужный вам порт
+from optimization_methods import SERVER_HOST, SERVER_PORT, get_logging_config
 
 class OptimizationModel:
     def __init__(self, a=1.0):
@@ -32,6 +29,7 @@ class OptimizationModel:
         self.curr_cv11=20
         self.curr_cv12=95
         self.curr_cv13=61.1
+        self.curr_dv1=self.curr_mv1+self.curr_mv2+self.curr_mv3
 
 
     def evaluate(self, mv_values: List[float]) -> float:
@@ -51,7 +49,8 @@ class OptimizationModel:
             self.curr_cv10-0.0218*(x1-self.curr_mv1)-0.015*(x2-self.curr_mv2)+0.0288*(x3-self.curr_mv3)+0.109*(x4-self.curr_mv4)+0.0655*(x5-self.curr_mv5)-0.0218*(x6-self.curr_mv6),             # CV10 (индекс 10)
             self.curr_cv11-0.546*(x1-self.curr_mv1)-0.382*(x2-self.curr_mv2)+0.721*(x3-self.curr_mv3)+0.719*(x4-self.curr_mv4)+0.764*(x5-self.curr_mv5)-0.546*(x6-self.curr_mv6),                # CV11 (индекс 11)
             self.curr_cv12-0.109*(x1-self.curr_mv1)-0.546*(x2-self.curr_mv2)+0.0546*(x3-self.curr_mv3)+0.625*(x4-self.curr_mv4)+0.371*(x5-self.curr_mv5)-0.109*(x6-self.curr_mv6),        # CV12 (индекс 12)
-            self.curr_cv13+0.962*(x1-self.curr_mv1)+1*(x2-self.curr_mv2)+0.88*(x3-self.curr_mv3)         # CV13 (индекс 13)
+            self.curr_cv13+0.962*(x1-self.curr_mv1)+1*(x2-self.curr_mv2)+0.88*(x3-self.curr_mv3),         # CV13 (индекс 13)
+            self.curr_dv1-x1-x2-x3
         ]
         target_func=(40000*additional_cv[13-1]-65000*x5-45000*x6)
         return [target_func]+additional_cv
@@ -59,13 +58,17 @@ class OptimizationModel:
 class RtoClient:
     def __init__(self, server_address=None, optimization_method="GaussOpt"):
         if server_address is None:
-            # Используем порт из CUSTOM_PORT вместо порта по умолчанию
-            server_address = f'{SERVER_HOST}:{CUSTOM_PORT}'
+            # Используем порт из config.json
+            server_address = f'{SERVER_HOST}:{SERVER_PORT}'
         self.channel = grpc.insecure_channel(server_address)
         self.stub = RtoApi_pb2_grpc.RtoServiceStub(self.channel)
         self.model = OptimizationModel()
         self.mv_names = {}
         self.optimization_method = optimization_method
+        
+        # Загружаем настройки логирования
+        self.logging_config = get_logging_config()
+        print(f"[CLIENT] Подключение к серверу: {server_address}")
 
     def start_session(self) -> tuple:
         #cv = {
@@ -117,6 +120,9 @@ class RtoClient:
             },
             {
                 "Id": "cv13", "Name": "Y13", "DataType": "Numeric", "LowerBound": 33.3,"UpperBound": 59.9
+            },
+            {
+                "Id": "dv1", "Name": "material_balance", "DataType": "Numeric", "LowerBound": -0.005,"UpperBound": 0.005
             }
         ]
 
@@ -156,7 +162,7 @@ class RtoClient:
                 mvs=mv_tags,
                 maximize=True,
                 optimization_method=self.optimization_method,
-                max_iterations=1000,
+                max_iterations=2000,  
                 model_id="optimization_model"
             )
         )
@@ -172,10 +178,20 @@ class RtoClient:
         evaluations = 0
         cv_id = "36127bf6-bf83-45c0-a4e1-65d2a1c20c22"
         model = self.model
+        max_iterations = 2000  # Сохраняем для отображения прогресса
+        
+        # Настройки логирования из конфигурации
+        show_details = self.logging_config.get("show_iteration_details", True)
+        progress_interval = self.logging_config.get("progress_report_interval", 50)
+        detailed_cv = self.logging_config.get("detailed_cv_logging", True)
 
         last_mv_values = None
 
         while True:
+            evaluations += 1
+            if show_details:
+                print(f"\n[CLIENT] ===== Итерация {evaluations}/{max_iterations} =====")
+            
             # 1. Request new MV from server
             response = self.stub.OptimizeIteration(
                 RtoApi_pb2.OptimizeIterationRequest(
@@ -186,17 +202,21 @@ class RtoClient:
 
             mv_values = [float(tag.numericValue) for tag in response.mv_values]
             last_mv_values = mv_values
-            print(f"[CLIENT][DEBUG] MV order (ids): {mv_ids}")
-            print(f"[CLIENT][DEBUG] MV values received from server: {mv_values}")
+            
+            if show_details:
+                print(f"[CLIENT][Итерация {evaluations}] MV получены от сервера: {mv_values}")
 
             if len(mv_values) != len(mv_ids):
-                print(f"[CLIENT][ERROR] Размерность MV не совпадает с количеством MV id! Прерывание.")
+                print(f"[CLIENT][ERROR][Итерация {evaluations}] Размерность MV не совпадает с количеством MV id. Прерывание.")
                 break
 
             # 2. Calculate all CV values (target function + constraints)
             cv = model.evaluate(mv_values)
-            print(f"[CLIENT][DEBUG] Calculated Target value: {cv[0]} for MV: {mv_values}")
-            print(f"[CLIENT][DEBUG] All CVs: {cv}")
+            
+            if show_details:
+                print(f"[CLIENT][Итерация {evaluations}] Вычислена целевая функция: {cv[0]:.6f}")
+                if detailed_cv:
+                    print(f"[CLIENT][Итерация {evaluations}] Все CV: {[round(c, 4) for c in cv]}")
 
             # 3. Prepare data to send back
             # Target function (objective)
@@ -222,50 +242,55 @@ class RtoClient:
                     objective_function_value=objective_function
                 )
             )
-            print(f"[CLIENT] Sent CV={cv} for MV={mv_values}")
-
-            evaluations += 1
+            
+            if show_details:
+                print(f"[CLIENT][Итерация {evaluations}] Отправлены CV на сервер")
 
             # Check for completion
             if response.flag == 3:
-                print(f"[CLIENT] Optimization completed in {evaluations} steps.")
+                print(f"\n[CLIENT] Оптимизация завершена за {evaluations} итераций.")
                 final_mv = [float(tag.numericValue) for tag in response.mv_values]
                 final_cv = model.evaluate(final_mv)
-                print(f"[CLIENT] Best point (according to optimizer): {final_mv}")
-                print(f"[CLIENT] Target value at best point: {final_cv[0]:.2f}")
-                for i in range(1, len(final_cv)):
-                    print(f"CV{i}: {final_cv[i]:.2f}")
+                print(f"[CLIENT] Лучшая точка: {final_mv}")
+                print(f"[CLIENT] Значение целевой функции: {final_cv[0]:.6f}")
+                if detailed_cv:
+                    for i in range(1, len(final_cv)):
+                        print(f"CV{i}: {final_cv[i]:.4f}")
                 return {mv_ids[i]: final_mv[i] for i in range(len(mv_ids))}
+
+            # Показываем прогресс согласно настройкам
+            if evaluations % progress_interval == 0:
+                progress_percent = (evaluations / max_iterations) * 100
+                print(f"[CLIENT] Прогресс: {progress_percent:.1f}% ({evaluations}/{max_iterations})")
 
         # If the loop exits abnormally, return the last received MV
         return {mv_ids[i]: last_mv_values[i] for i in range(len(mv_ids))}
 
 if __name__ == "__main__":
-    method = "Genetic_Algo"
-    print(f"[MAIN] Будет использоваться метод оптимизации: {method}")
+    method = "SimulatedAnnealingOpt"
+    print(f"[MAIN] Инициализация метода оптимизации: {method}")
 
     client = RtoClient(optimization_method=method)
     
     try:
-        print("Starting optimization with:")
-        print("- 1 target function (unbounded)")
-        print("- 13 additional CVs with bounds")
-        print("- 6 MVs with bounds")
-        print(f"- Метод: {client.optimization_method}")
-        print("- Макс итераций: 100")
+        print("Запуск оптимизации с параметрами:")
+        print("- 1 целевая функция (неограниченная)")
+        print("- 13 дополнительных ограничений CV")
+        print("- 6 переменных MV с ограничениями")
+        print(f"- Метод оптимизации: {client.optimization_method}")
+        print("- Максимальное количество итераций: 2000")
         
         session_id, mv_ids = client.start_session()
-        print(f"\n[CLIENT] Создана сессия: {session_id}")
-        print(f"[CLIENT] MV параметры: {mv_ids}")
-        #print(f"[CLIENT] CV параметры: {cv_ids}")
+        print(f"\n[CLIENT] Создана сессия оптимизации: {session_id}")
+        print(f"[CLIENT] Оптимизируемые переменные: {mv_ids}")
         
         result = client.run_optimization(session_id, mv_ids)
         
-        print("\nФинальные значения:")
+        print("\nФинальные значения оптимизированных переменных:")
         for tag_id, value in result.items():
             mv_name = client.mv_names.get(tag_id, tag_id)
             print(f"{tag_id} ({mv_name}): {value:.10f}")
-        print(f"Всего MV: {len(result)}")
+        print(f"Общее количество переменных: {len(result)}")
             
     except Exception as e:
         print(f"\n[CLIENT] Ошибка в процессе оптимизации: {str(e)}")

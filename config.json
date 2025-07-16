@@ -1,0 +1,50 @@
+{
+  "server": {
+    "host": "localhost",
+    "port": 5089,
+    "max_workers": 10
+  },
+  "hyperparameters": {
+    "GaussOpt": {
+      "seed": 15,
+      "kernel_cfg": ["Matern", {"nu": 2.5}]
+    },
+    "SimulatedAnnealingOpt": {
+      "seed": 1546,
+      "initial_temp": 100.0,
+      "min_temp": 1e-8,
+      "cooling_rate": 0.97,
+      "step_size": 0.5,
+      "penalty_coef": 1e8
+    },
+    "EvolutionaryOpt": {
+      "seed": 1546,
+      "population_size": 30,
+      "offspring_per_parent": 5,
+      "mutation_prob": 0.3,
+      "sigma_init": 0.2
+    },
+    "TestStepOpt": {
+      "seed": 1546
+    },
+    "Genetic_Algo": {
+      "seed": 1546,
+      "population_size": 50,
+      "init_mutation": 0.2,
+      "min_mutation": 0.01,
+      "elite_size": 10
+    }
+  },
+  "logging": {
+    "show_iteration_details": true,
+    "progress_report_interval": 50,
+    "detailed_cv_logging": true,
+    "show_constraint_violations": true,
+    "show_best_results": true,
+    "performance_optimization": {
+      "reduced_logging_after_iteration": 50,
+      "save_iterations_interval": 10,
+      "max_stored_iterations": 10
+    }
+  }
+}
